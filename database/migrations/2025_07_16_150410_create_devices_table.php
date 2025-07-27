@@ -16,6 +16,8 @@ return new class extends Migration
             $table->string('name');
             $table->string('ip_address');
             $table->string('api_key');
+            $table->string('status')->default('inactive'); // Tambahkan kolom status
+            $table->timestamp('last_seen_at')->nullable(); // Tambahkan kolom last_seen_at
             $table->timestamps();
         });
     }

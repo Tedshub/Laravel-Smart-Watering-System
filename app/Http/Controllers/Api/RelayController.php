@@ -16,20 +16,19 @@ class RelayController extends Controller
      */
     public function logEvent(Request $request)
     {
-        $device = $this->authenticateDevice($request);
-
-        if (!$device) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unauthorized'
-            ], 401);
-        }
+        // Jika tidak membutuhkan autentikasi, hapus bagian ini
+        // $device = $this->authenticateDevice($request);
+        // if (!$device) {
+        //     return response()->json([
+        //         'status' => 'error',
+        //         'message' => 'Unauthorized'
+        //     ], 401);
+        // }
 
         $validator = Validator::make($request->all(), [
-            'event' => 'required|in:manual_activation,schedule_triggered,schedule_added,deactivation',
-            'duration' => 'required_if:event,manual_activation,schedule_triggered|integer|min:1',
-            'hour' => 'required_if:event,schedule_added|integer|min:0|max:23',
-            'minute' => 'required_if:event,schedule_added|integer|min:0|max:59'
+            'event' => 'required|in:schedule_triggered', // Sesuaikan dengan yang dikirim ESP
+            'duration' => 'required|integer|min:1',
+            'device_id' => 'required|exists:devices,id'
         ]);
 
         if ($validator->fails()) {
@@ -41,42 +40,21 @@ class RelayController extends Controller
         }
 
         try {
-            $action = '';
-            $duration = null;
-
-            switch ($request->event) {
-                case 'manual_activation':
-                    $action = 'activated';
-                    $duration = $request->duration;
-                    break;
-                case 'schedule_triggered':
-                    $action = 'scheduled';
-                    $duration = $request->duration;
-                    break;
-                case 'deactivation':
-                    $action = 'deactivated';
-                    break;
-                case 'schedule_added':
-                    // This would be handled by ScheduleController
-                    break;
-            }
-
-            if ($action) {
-                RelayLog::create([
-                    'device_id' => $device->id,
-                    'action' => $action,
-                    'duration_seconds' => $duration
-                ]);
-            }
+            RelayLog::create([
+                'device_id' => $request->device_id,
+                'action' => 'scheduled', // Sesuai enum di migration
+                'duration_seconds' => $request->duration
+            ]);
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Event logged'
+                'message' => 'Event logged successfully'
             ]);
+
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to log event'
+                'message' => 'Failed to log event: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -148,7 +126,7 @@ class RelayController extends Controller
         // For now, we'll just log it
 
         $device = Device::first(); // Assuming single device for simplicity
-        $action = $request->action == 'activate' ? 'activated' : 'deactivated';
+        $action = $request->action == 'activate' ; 'deactivated';
 
         RelayLog::create([
             'device_id' => $device->id,
@@ -157,6 +135,31 @@ class RelayController extends Controller
         ]);
 
         return back()->with('status', 'Relay ' . $action . ' successfully');
+    }
+
+    /**
+     * Delete all relay logs
+     */
+    public function deleteAllLogs(Request $request)
+    {
+        try {
+            // Anda mungkin ingin menambahkan autentikasi/otorisasi di sini
+            // Contoh: hanya izinkan admin yang bisa menghapus semua log
+
+            $deletedCount = RelayLog::query()->delete();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'All relay logs deleted successfully',
+                'deleted_count' => $deletedCount
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to delete logs: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

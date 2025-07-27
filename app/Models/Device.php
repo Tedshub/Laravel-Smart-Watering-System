@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Carbon\Carbon;
 
 class Device extends Model
 {
@@ -12,21 +13,19 @@ class Device extends Model
     protected $fillable = [
         'name',
         'ip_address',
-        'api_key'
+        'api_key',
+        'status',
+        'last_seen_at'
     ];
 
-    public function sensorLogs()
-    {
-        return $this->hasMany(SensorLog::class);
-    }
+    protected $casts = [
+        'last_seen_at' => 'datetime',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime'
+    ];
 
-    public function relayLogs()
+    public function isOnline()
     {
-        return $this->hasMany(RelayLog::class);
-    }
-
-    public function schedules()
-    {
-        return $this->hasMany(Schedule::class);
+        return $this->last_seen_at && $this->last_seen_at->gt(Carbon::now()->subMinutes(5));
     }
 }

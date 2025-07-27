@@ -74,6 +74,7 @@ class ScheduleController extends Controller
         $validator = Validator::make($request->all(), [
             'hour' => 'required|integer|min:0|max:23',
             'minute' => 'required|integer|min:0|max:59',
+            'duration' => 'required|integer|min:1|max:1440', // 1 menit - 24 jam
             'active' => 'sometimes|boolean'
         ]);
 
@@ -90,6 +91,7 @@ class ScheduleController extends Controller
                 'device_id' => $device->id,
                 'hour' => $request->hour,
                 'minute' => $request->minute,
+                'duration' => $request->duration,
                 'active' => $request->has('active') ? $request->active : true
             ]);
 
@@ -123,6 +125,7 @@ class ScheduleController extends Controller
         $validator = Validator::make($request->all(), [
             'hour' => 'sometimes|integer|min:0|max:23',
             'minute' => 'sometimes|integer|min:0|max:59',
+            'duration' => 'sometimes|integer|min:1|max:1440',
             'active' => 'sometimes|boolean'
         ]);
 
@@ -141,6 +144,10 @@ class ScheduleController extends Controller
 
             if ($request->has('minute')) {
                 $schedule->minute = $request->minute;
+            }
+
+            if ($request->has('duration')) {
+                $schedule->duration = $request->duration;
             }
 
             if ($request->has('active')) {

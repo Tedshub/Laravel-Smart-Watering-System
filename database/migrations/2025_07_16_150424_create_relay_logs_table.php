@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('relay_logs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('device_id')->constrained();
-            $table->enum('action', ['activated', 'deactivated', 'scheduled']);
+            $table->enum('action', ['activated','scheduled'])->default('scheduled');
             $table->integer('duration_seconds')->nullable();
             $table->timestamps();
         });

@@ -18,10 +18,10 @@ class DatabaseSeeder extends Seeder
         // Jalankan UserSeeder terlebih dahulu
         $this->call([
             UserSeeder::class,
-            DeviceSeeder::class,
-            SensorLogsSeeder::class,
-            RelayLogsSeeder::class,
-            ScheduleSeeder::class,
+            // DeviceSeeder::class,
+            // SensorLogsSeeder::class,
+            // RelayLogsSeeder::class,
+            // ScheduleSeeder::class,
         ]);
 
         // Tambahkan user test tambahan jika diperlukan

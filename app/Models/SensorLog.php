@@ -12,7 +12,8 @@ class SensorLog extends Model
     protected $fillable = [
         'device_id',
         'sensor_number',
-        'status'
+        'status',
+        'duration_seconds'
     ];
 
     public function device()

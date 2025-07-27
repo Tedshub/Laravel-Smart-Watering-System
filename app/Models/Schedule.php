@@ -13,6 +13,7 @@ class Schedule extends Model
         'device_id',
         'hour',
         'minute',
+        'duration',
         'active'
     ];
 

@@ -15,19 +15,32 @@ class SensorController extends Controller
      */
     public function logStatus(Request $request)
     {
-        $device = $this->authenticateDevice($request);
+        // Autentikasi
+        $apiKey = $request->header('Authorization');
+        if (!$apiKey) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Authorization header missing'
+            ], 401);
+        }
+
+        $token = str_replace('Bearer ', '', $apiKey);
+        $device = Device::where('api_key', $token)->first();
 
         if (!$device) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Unauthorized'
+                'message' => 'Invalid API Key'
             ], 401);
         }
 
+        // Validasi data
         $validator = Validator::make($request->all(), [
-            'sensors' => 'required|array',
-            'sensors.*.id' => 'required|integer|min:1|max:4',
-            'sensors.*.status' => 'required|in:safe,raining'
+            'sensors' => 'sometimes|array',
+            'sensors.*.id' => 'required_with:sensors|integer|min:1|max:4',
+            'sensors.*.status' => 'required_with:sensors|in:safe,raining',
+            'sensors.*.duration_seconds' => 'nullable|integer|min:0',
+            'device_id' => 'required|exists:devices,id',
         ]);
 
         if ($validator->fails()) {
@@ -38,29 +51,46 @@ class SensorController extends Controller
             ], 400);
         }
 
+        // Cek apakah device_id sesuai dengan API key
+        if ($request->device_id != $device->id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Device ID mismatch'
+            ], 403);
+        }
+
         try {
+            if (empty($request->sensors)) {
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'No sensor data to log'
+                ]);
+            }
+
             foreach ($request->sensors as $sensorData) {
                 SensorLog::create([
-                    'device_id' => $device->id,
+                    'device_id' => $request->device_id,
                     'sensor_number' => $sensorData['id'],
-                    'status' => $sensorData['status']
+                    'status' => $sensorData['status'],
+                    'duration_seconds' => $sensorData['duration_seconds'] ?? null,
                 ]);
             }
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Sensor data logged'
+                'message' => 'Sensor data logged successfully'
             ]);
+
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to log sensor data'
+                'message' => 'Failed to log sensor data: ' . $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Get sensor logs
+     * Get sensor logs (paginated)
      */
     public function getLogs(Request $request)
     {
@@ -78,8 +108,7 @@ class SensorController extends Controller
             ], 400);
         }
 
-        $query = SensorLog::with('device')
-            ->orderBy('created_at', 'desc');
+        $query = SensorLog::with('device')->orderBy('created_at', 'desc');
 
         if ($request->has('device_id')) {
             $query->where('device_id', $request->device_id);
@@ -89,7 +118,7 @@ class SensorController extends Controller
             $query->where('sensor_number', $request->sensor_number);
         }
 
-        $limit = $request->has('limit') ? $request->limit : 20;
+        $limit = $request->get('limit', 20);
         $logs = $query->paginate($limit);
 
         return response()->json([
@@ -99,7 +128,7 @@ class SensorController extends Controller
     }
 
     /**
-     * Get current sensor status
+     * Get current status of all sensors for a device
      */
     public function getCurrentStatus(Request $request, $deviceId)
     {
@@ -127,23 +156,50 @@ class SensorController extends Controller
             'data' => [
                 'device_id' => $deviceId,
                 'sensors' => $latestLogs,
-                'last_updated' => SensorLog::where('device_id', $deviceId)
-                    ->max('created_at')
+                'last_updated' => SensorLog::where('device_id', $deviceId)->max('created_at')
             ]
         ]);
     }
 
     /**
-     * Authenticate device using API key
+     * Delete all sensor logs (with authentication)
      */
-    private function authenticateDevice(Request $request)
+    public function deleteAllLogs(Request $request)
     {
-        $apiKey = $request->header('X-API-KEY');
-
+        // Autentikasi
+        $apiKey = $request->header('Authorization');
         if (!$apiKey) {
-            return null;
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Authorization header missing'
+            ], 401);
         }
 
-        return Device::where('api_key', $apiKey)->first();
+        $token = str_replace('Bearer ', '', $apiKey);
+        $device = Device::where('api_key', $token)->first();
+
+        if (!$device) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Invalid API Key'
+            ], 401);
+        }
+
+        try {
+            // Hapus hanya data dari device yang terautentikasi
+            $deletedCount = SensorLog::where('device_id', $device->id)->delete();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'All sensor logs deleted successfully',
+                'deleted_count' => $deletedCount
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to delete logs: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { usePage } from '@inertiajs/react';
 
@@ -10,6 +10,12 @@ export default function HistoryLogsCard({ activeTab, setActiveTab }) {
     const [error, setError] = useState(null);
     const [relayPagination, setRelayPagination] = useState(null);
     const [sensorPagination, setSensorPagination] = useState(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState(null);
+    const [deleteSuccess, setDeleteSuccess] = useState(null);
+    const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(true);
+    const [lastRefresh, setLastRefresh] = useState(null);
+    const intervalRef = useRef(null);
     const [relayFilters, setRelayFilters] = useState({
         device_id: '',
         action: '',
@@ -23,8 +29,8 @@ export default function HistoryLogsCard({ activeTab, setActiveTab }) {
         limit: 20
     });
 
-    const fetchRelayLogs = async (page = 1) => {
-        setIsLoading(true);
+    const fetchRelayLogs = async (page = 1, showLoading = true) => {
+        if (showLoading) setIsLoading(true);
         setError(null);
 
         try {
@@ -47,6 +53,7 @@ export default function HistoryLogsCard({ activeTab, setActiveTab }) {
             if (response.data.status === 'success') {
                 setRelayLogs(response.data.data.data);
                 setRelayPagination(response.data.data);
+                setLastRefresh(new Date());
             } else {
                 setError('Failed to load relay logs');
             }
@@ -54,12 +61,12 @@ export default function HistoryLogsCard({ activeTab, setActiveTab }) {
             setError('Failed to load relay logs');
             console.error('Error fetching relay logs:', err);
         } finally {
-            setIsLoading(false);
+            if (showLoading) setIsLoading(false);
         }
     };
 
-    const fetchSensorLogs = async (page = 1) => {
-        setIsLoading(true);
+    const fetchSensorLogs = async (page = 1, showLoading = true) => {
+        if (showLoading) setIsLoading(true);
         setError(null);
 
         try {
@@ -80,6 +87,7 @@ export default function HistoryLogsCard({ activeTab, setActiveTab }) {
             if (response.data.status === 'success') {
                 setSensorLogs(response.data.data.data);
                 setSensorPagination(response.data.data);
+                setLastRefresh(new Date());
             } else {
                 setError('Failed to load sensor logs');
             }
@@ -87,10 +95,44 @@ export default function HistoryLogsCard({ activeTab, setActiveTab }) {
             setError('Failed to load sensor logs');
             console.error('Error fetching sensor logs:', err);
         } finally {
-            setIsLoading(false);
+            if (showLoading) setIsLoading(false);
         }
     };
 
+    // Auto-refresh function
+    const autoRefresh = () => {
+        if (isAutoRefreshEnabled && !isDeleting) {
+            const currentPage = activeTab === 'relay'
+                ? relayPagination?.current_page || 1
+                : sensorPagination?.current_page || 1;
+
+            if (activeTab === 'relay') {
+                fetchRelayLogs(currentPage, false); // Don't show loading spinner for auto-refresh
+            } else {
+                fetchSensorLogs(currentPage, false); // Don't show loading spinner for auto-refresh
+            }
+        }
+    };
+
+    // Setup auto-refresh interval
+    useEffect(() => {
+        if (isAutoRefreshEnabled) {
+            intervalRef.current = setInterval(autoRefresh, 5000); // 5 seconds
+        } else {
+            if (intervalRef.current) {
+                clearInterval(intervalRef.current);
+                intervalRef.current = null;
+            }
+        }
+
+        return () => {
+            if (intervalRef.current) {
+                clearInterval(intervalRef.current);
+            }
+        };
+    }, [isAutoRefreshEnabled, activeTab, relayFilters, sensorFilters, relayPagination, sensorPagination, isDeleting]);
+
+    // Initial fetch and filter changes
     useEffect(() => {
         if (activeTab === 'relay') {
             fetchRelayLogs();
@@ -98,6 +140,15 @@ export default function HistoryLogsCard({ activeTab, setActiveTab }) {
             fetchSensorLogs();
         }
     }, [activeTab, relayFilters, sensorFilters]);
+
+    // Clear interval when component unmounts
+    useEffect(() => {
+        return () => {
+            if (intervalRef.current) {
+                clearInterval(intervalRef.current);
+            }
+        };
+    }, []);
 
     const handleRelayFilterChange = (key, value) => {
         setRelayFilters(prev => ({
@@ -139,6 +190,80 @@ export default function HistoryLogsCard({ activeTab, setActiveTab }) {
         });
     };
 
+    const toggleAutoRefresh = () => {
+        setIsAutoRefreshEnabled(prev => !prev);
+    };
+
+    const deleteAllRelayLogs = async () => {
+        if (!confirm('Are you sure you want to delete all relay logs? This action cannot be undone.')) {
+            return;
+        }
+
+        setIsDeleting(true);
+        setDeleteError(null);
+        setDeleteSuccess(null);
+
+        try {
+            const response = await axios.delete('/relay/logs', {
+                headers: {
+                    'X-CSRF-TOKEN': csrf,
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (response.data.status === 'success') {
+                setDeleteSuccess('All relay logs have been deleted successfully');
+                fetchRelayLogs();
+            } else {
+                setDeleteError(response.data.message || 'Failed to delete relay logs');
+            }
+        } catch (err) {
+            setDeleteError(err.response?.data?.message || 'Failed to delete relay logs');
+            console.error('Error deleting relay logs:', err);
+        } finally {
+            setIsDeleting(false);
+            setTimeout(() => {
+                setDeleteSuccess(null);
+                setDeleteError(null);
+            }, 5000);
+        }
+    };
+
+    const deleteAllSensorLogs = async () => {
+        if (!confirm('Are you sure you want to delete all sensor logs? This action cannot be undone.')) {
+            return;
+        }
+
+        setIsDeleting(true);
+        setDeleteError(null);
+        setDeleteSuccess(null);
+
+        try {
+            const response = await axios.delete('/sensor/logs', {
+                headers: {
+                    'X-CSRF-TOKEN': csrf,
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (response.data.status === 'success') {
+                setDeleteSuccess('All sensor logs have been deleted successfully');
+                fetchSensorLogs();
+            } else {
+                setDeleteError(response.data.message || 'Failed to delete sensor logs');
+            }
+        } catch (err) {
+            setDeleteError(err.response?.data?.message || 'Failed to delete sensor logs');
+            console.error('Error deleting sensor logs:', err);
+        } finally {
+            setIsDeleting(false);
+            setTimeout(() => {
+                setDeleteSuccess(null);
+                setDeleteError(null);
+            }, 5000);
+        }
+    };
+
     const formatDate = (dateString) => {
         return new Date(dateString).toLocaleString('id-ID', {
             year: 'numeric',
@@ -175,11 +300,29 @@ export default function HistoryLogsCard({ activeTab, setActiveTab }) {
     };
 
     const currentPagination = activeTab === 'relay' ? relayPagination : sensorPagination;
+    const hasLogs = activeTab === 'relay' ? relayLogs.length > 0 : sensorLogs.length > 0;
 
     return (
         <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
-            <div className="bg-gray-700 px-5 py-4">
+            <div className="bg-gray-700 px-5 py-4 flex justify-between items-center">
                 <h3 className="text-lg font-medium text-white">History Logs</h3>
+                <div className="flex items-center space-x-4">
+                    {lastRefresh && (
+                        <span className="text-sm text-gray-300">
+                            Last updated: {formatDate(lastRefresh)}
+                        </span>
+                    )}
+                    <button
+                        onClick={toggleAutoRefresh}
+                        className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                            isAutoRefreshEnabled
+                                ? 'bg-green-600 text-white hover:bg-green-700'
+                                : 'bg-gray-500 text-white hover:bg-gray-600'
+                        }`}
+                    >
+                        Auto-refresh: {isAutoRefreshEnabled ? 'ON' : 'OFF'}
+                    </button>
+                </div>
             </div>
             <div className="p-5">
                 {/* Tab Navigation */}
@@ -195,6 +338,9 @@ export default function HistoryLogsCard({ activeTab, setActiveTab }) {
                                 }`}
                             >
                                 Relay Logs
+                                {isAutoRefreshEnabled && activeTab === 'relay' && (
+                                    <span className="ml-2 inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                                )}
                             </button>
                             <button
                                 onClick={() => setActiveTab('sensor')}
@@ -205,10 +351,25 @@ export default function HistoryLogsCard({ activeTab, setActiveTab }) {
                                 }`}
                             >
                                 Sensor Logs
+                                {isAutoRefreshEnabled && activeTab === 'sensor' && (
+                                    <span className="ml-2 inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                                )}
                             </button>
                         </nav>
                     </div>
                 </div>
+
+                {/* Success/Error Messages */}
+                {deleteSuccess && (
+                    <div className="mb-4 p-4 bg-green-50 text-green-800 rounded-lg">
+                        {deleteSuccess}
+                    </div>
+                )}
+                {deleteError && (
+                    <div className="mb-4 p-4 bg-red-50 text-red-800 rounded-lg">
+                        {deleteError}
+                    </div>
+                )}
 
                 {/* Filters */}
                 <div className="mb-6 p-4 bg-gray-50 rounded-lg">
@@ -326,13 +487,22 @@ export default function HistoryLogsCard({ activeTab, setActiveTab }) {
                             </div>
                         </div>
                     )}
-                    <div className="mt-4 flex justify-end">
+                    <div className="mt-4 flex justify-between">
                         <button
                             onClick={activeTab === 'relay' ? clearRelayFilters : clearSensorFilters}
                             className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500"
                         >
                             Clear Filters
                         </button>
+                        {hasLogs && (
+                            <button
+                                onClick={activeTab === 'relay' ? deleteAllRelayLogs : deleteAllSensorLogs}
+                                disabled={isDeleting}
+                                className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isDeleting ? 'Deleting...' : 'Delete All Logs'}
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -413,6 +583,9 @@ export default function HistoryLogsCard({ activeTab, setActiveTab }) {
                                                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                     Status
                                                 </th>
+                                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                                    Duration (Seconds)
+                                                </th>
                                             </tr>
                                         </thead>
                                         <tbody className="bg-white divide-y divide-gray-200">
@@ -431,6 +604,9 @@ export default function HistoryLogsCard({ activeTab, setActiveTab }) {
                                                         <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadgeClass(log.status)}`}>
                                                             {log.status === 'raining' ? 'Raining' : 'Safe'}
                                                         </span>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                        {log.duration_seconds || 'N/A'}
                                                     </td>
                                                 </tr>
                                             ))}

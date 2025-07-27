@@ -9,22 +9,21 @@ import HistoryLogsCard from '@/Components/Dashboard/HistoryLogsCard';
 import LoadingState from '@/Components/Shared/LoadingState';
 import ErrorState from '@/Components/Shared/ErrorState';
 
-export default function Dashboard() {
+export default function Dashboard({ auth }) {
+    const [selectedDevice, setSelectedDevice] = useState(null);
     const [deviceStatus, setDeviceStatus] = useState({
         relay_active: false,
         relay_scheduled: false,
         relay_duration: 0
     });
     const [sensorStatus, setSensorStatus] = useState({ sensors: [] });
-    const [schedules, setSchedules] = useState([]);
     const [relayLogs, setRelayLogs] = useState([]);
     const [sensorLogs, setSensorLogs] = useState([]);
     const [duration, setDuration] = useState(10);
-    const [scheduleHour, setScheduleHour] = useState('');
-    const [scheduleMinute, setScheduleMinute] = useState('');
     const [activeTab, setActiveTab] = useState('relay');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [showProfileDropdown, setShowProfileDropdown] = useState(false);
 
     const safeJsonParse = async (response) => {
         try {
@@ -42,9 +41,14 @@ export default function Dashboard() {
         return metaTag ? metaTag.getAttribute('content') : '';
     };
 
-    const updateDeviceStatus = async () => {
+    const updateDeviceStatus = async (deviceId = null) => {
         try {
-            const response = await fetch('/api/device/status');
+            let url = '/api/device/status';
+            if (deviceId) {
+                url = `/api/device/${deviceId}/status`;
+            }
+
+            const response = await fetch(url);
             if (response.ok) {
                 const data = await safeJsonParse(response);
                 if (data) {
@@ -60,9 +64,14 @@ export default function Dashboard() {
         }
     };
 
-    const updateSensorStatus = async () => {
+    const updateSensorStatus = async (deviceId = null) => {
         try {
-            const response = await fetch('/api/sensor/status');
+            let url = '/api/sensor/status';
+            if (deviceId) {
+                url = `/api/device/${deviceId}/sensor/status`;
+            }
+
+            const response = await fetch(url);
             if (response.ok) {
                 const data = await safeJsonParse(response);
                 if (data && Array.isArray(data.sensors)) {
@@ -76,42 +85,14 @@ export default function Dashboard() {
         }
     };
 
-    const loadSchedules = async () => {
+    const loadRelayLogs = async (deviceId = null) => {
         try {
-            const response = await fetch('/api/schedules');
-            if (response.ok) {
-                const data = await safeJsonParse(response);
-                if (data && Array.isArray(data)) {
-                    setSchedules(data);
-                } else {
-                    setSchedules([]);
-                }
+            let url = '/api/relay/logs';
+            if (deviceId) {
+                url = `/api/device/${deviceId}/relay/logs`;
             }
-        } catch (error) {
-            console.error('Error loading schedules:', error);
-        }
-    };
 
-    const deleteSchedule = async (id) => {
-        try {
-            const response = await fetch(`/api/schedules/${id}`, {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': getCsrfToken()
-                }
-            });
-            if (response.ok) {
-                await loadSchedules();
-            }
-        } catch (error) {
-            console.error('Error deleting schedule:', error);
-        }
-    };
-
-    const loadRelayLogs = async () => {
-        try {
-            const response = await fetch('/api/relay/logs');
+            const response = await fetch(url);
             if (response.ok) {
                 const data = await safeJsonParse(response);
                 if (data && Array.isArray(data)) {
@@ -125,9 +106,14 @@ export default function Dashboard() {
         }
     };
 
-    const loadSensorLogs = async () => {
+    const loadSensorLogs = async (deviceId = null) => {
         try {
-            const response = await fetch('/api/sensor/logs');
+            let url = '/api/sensor/logs';
+            if (deviceId) {
+                url = `/api/device/${deviceId}/sensor/logs`;
+            }
+
+            const response = await fetch(url);
             if (response.ok) {
                 const data = await safeJsonParse(response);
                 if (data && Array.isArray(data)) {
@@ -142,8 +128,13 @@ export default function Dashboard() {
     };
 
     const handleRelayControl = async (action) => {
+        if (!selectedDevice) {
+            setError('Please select a device first');
+            return;
+        }
+
         try {
-            const body = { action };
+            const body = { action, device_id: selectedDevice.id };
             if (action === 'activate') {
                 body.duration = parseInt(duration) || 10;
             }
@@ -158,36 +149,43 @@ export default function Dashboard() {
             });
 
             if (response.ok) {
-                await updateDeviceStatus();
-                await loadRelayLogs();
+                await updateDeviceStatus(selectedDevice.id);
+                await loadRelayLogs(selectedDevice.id);
             }
         } catch (error) {
             console.error('Error controlling relay:', error);
         }
     };
 
-    const handleScheduleSubmit = async (e) => {
-        e.preventDefault();
+    const handleDeviceSelect = (device) => {
+        setSelectedDevice(device);
+        if (device) {
+            updateDeviceStatus(device.id);
+            updateSensorStatus(device.id);
+            loadRelayLogs(device.id);
+            loadSensorLogs(device.id);
+        } else {
+            updateDeviceStatus();
+            updateSensorStatus();
+            loadRelayLogs();
+            loadSensorLogs();
+        }
+    };
+
+    const handleLogout = async () => {
         try {
-            const response = await fetch('/api/schedules', {
+            const response = await fetch('/logout', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': getCsrfToken()
-                },
-                body: JSON.stringify({
-                    hour: parseInt(scheduleHour),
-                    minute: parseInt(scheduleMinute)
-                })
+                }
             });
 
             if (response.ok) {
-                await loadSchedules();
-                setScheduleHour('');
-                setScheduleMinute('');
+                window.location.href = '/login';
             }
         } catch (error) {
-            console.error('Error adding schedule:', error);
+            console.error('Logout error:', error);
         }
     };
 
@@ -200,7 +198,6 @@ export default function Dashboard() {
                 await Promise.all([
                     updateDeviceStatus(),
                     updateSensorStatus(),
-                    loadSchedules(),
                     loadRelayLogs(),
                     loadSensorLogs()
                 ]);
@@ -214,8 +211,21 @@ export default function Dashboard() {
 
         initializeData();
 
-        const deviceInterval = setInterval(updateDeviceStatus, 5000);
-        const sensorInterval = setInterval(updateSensorStatus, 5000);
+        const deviceInterval = setInterval(() => {
+            if (selectedDevice) {
+                updateDeviceStatus(selectedDevice.id);
+            } else {
+                updateDeviceStatus();
+            }
+        }, 5000);
+
+        const sensorInterval = setInterval(() => {
+            if (selectedDevice) {
+                updateSensorStatus(selectedDevice.id);
+            } else {
+                updateSensorStatus();
+            }
+        }, 5000);
 
         return () => {
             clearInterval(deviceInterval);
@@ -223,58 +233,132 @@ export default function Dashboard() {
         };
     }, []);
 
+    // Custom Sticky Navbar Component
+    const StickyNavbar = () => (
+        <nav className="sticky top-0 z-50 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 shadow-lg border-b border-emerald-500/20">
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                <div className="flex items-center justify-between h-16">
+                    {/* Title */}
+                    <div className="flex items-center">
+                        <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center">
+                            <svg className="w-8 h-8 mr-3 text-emerald-200" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732L14.146 12.8l-1.179 4.456a1 1 0 01-1.934 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732L9.854 7.2l1.179-4.456A1 1 0 0112 2z" clipRule="evenodd" />
+                            </svg>
+                            Smart Watering System Dashboard
+                        </h1>
+                    </div>
+
+                    {/* Profile Dropdown */}
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+                            className="flex items-center space-x-3 text-white hover:bg-white/10 rounded-lg px-4 py-2 transition-colors duration-200"
+                        >
+                            <div className="w-8 h-8 bg-emerald-300 rounded-full flex items-center justify-center">
+                                <span className="text-emerald-800 font-medium text-sm">
+                                    {auth?.user?.name ? auth.user.name.charAt(0).toUpperCase() : 'U'}
+                                </span>
+                            </div>
+                            <span className="hidden sm:block font-medium">
+                                {auth?.user?.name || 'User'}
+                            </span>
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                            </svg>
+                        </button>
+
+                        {/* Dropdown Menu */}
+                        {showProfileDropdown && (
+                            <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                                <div className="py-1">
+                                    <div className="px-4 py-3 border-b border-gray-100">
+                                        <p className="text-sm text-gray-600">Signed in as</p>
+                                        <p className="text-sm font-medium text-gray-900 truncate">
+                                            {auth?.user?.email || 'user@example.com'}
+                                        </p>
+                                    </div>
+
+                                    {/* Profile Link */}
+                                    <a
+                                        href="/profile"
+                                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-200"
+                                    >
+                                        <svg className="w-4 h-4 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                        </svg>
+                                        Profile
+                                    </a>
+
+                                    <div className="border-t border-gray-100 my-1"></div>
+
+                                    {/* Logout Button */}
+                                    <button
+                                        onClick={handleLogout}
+                                        className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors duration-200"
+                                    >
+                                        <svg className="w-4 h-4 mr-3 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                        </svg>
+                                        Sign Out
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </nav>
+    );
+
     if (loading) {
         return (
-            <AuthenticatedLayout
-                header={<h2 className="text-xl font-semibold leading-tight text-gray-800">Smart Watering System Dashboard</h2>}
-            >
+            <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50">
                 <Head title="Smart Watering System Dashboard" />
+                <StickyNavbar />
                 <LoadingState />
-            </AuthenticatedLayout>
+            </div>
         );
     }
 
     if (error) {
         return (
-            <AuthenticatedLayout
-                header={<h2 className="text-xl font-semibold leading-tight text-gray-800">Smart Watering System Dashboard</h2>}
-            >
+            <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50">
                 <Head title="Smart Watering System Dashboard" />
+                <StickyNavbar />
                 <ErrorState error={error} />
-            </AuthenticatedLayout>
+            </div>
         );
     }
 
     return (
-        <AuthenticatedLayout
-            header={<h2 className="text-2xl font-semibold leading-tight text-gray-800">Smart Watering System Dashboard</h2>}
-        >
+        <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50">
             <Head title="Smart Watering System Dashboard" />
+            <StickyNavbar />
 
             <div className="py-8 px-4 sm:px-6 lg:px-8">
                 <div className="mx-auto max-w-7xl">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                        <DeviceStatusCard deviceStatus={deviceStatus} />
-                        <SensorStatusCard sensorStatus={sensorStatus} />
+                        <DeviceStatusCard
+                            onDeviceSelect={handleDeviceSelect}
+                        />
+                        <ScheduleManagementCard
+                            selectedDevice={selectedDevice}
+                        />
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    {/* <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                         <ManualControlCard
                             deviceStatus={deviceStatus}
                             duration={duration}
                             setDuration={setDuration}
                             handleRelayControl={handleRelayControl}
+                            selectedDevice={selectedDevice}
                         />
-                        <ScheduleManagementCard
-                            schedules={schedules}
-                            scheduleHour={scheduleHour}
-                            scheduleMinute={scheduleMinute}
-                            setScheduleHour={setScheduleHour}
-                            setScheduleMinute={setScheduleMinute}
-                            handleScheduleSubmit={handleScheduleSubmit}
-                            deleteSchedule={deleteSchedule}
+                        <SensorStatusCard
+                            sensorStatus={sensorStatus}
+                            selectedDevice={selectedDevice}
                         />
-                    </div>
+                    </div> */}
 
                     <div className="mb-8">
                         <HistoryLogsCard
@@ -282,10 +366,11 @@ export default function Dashboard() {
                             setActiveTab={setActiveTab}
                             relayLogs={relayLogs}
                             sensorLogs={sensorLogs}
+                            selectedDevice={selectedDevice}
                         />
                     </div>
                 </div>
             </div>
-        </AuthenticatedLayout>
+        </div>
     );
 }

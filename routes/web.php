@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Foundation\Application;
 use Inertia\Inertia;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\Auth\AuthenticatedSessionController;
 
 // Tambahan controller IoT
 use App\Http\Controllers\Api\DeviceController;
@@ -27,26 +28,35 @@ Route::get('/dashboard', function () {
     return Inertia::render('Dashboard1');
 })->middleware(['auth', 'verified'])->name('dashboard');
 
-// API routes tetap
-Route::prefix('api')->group(function () {
-    Route::post('/device/register', [DeviceController::class, 'register']);
-    Route::post('/device/status', [DeviceController::class, 'updateStatus']);
+// API routes
+Route::prefix('api')->middleware(['auth', 'web'])->group(function () {
     Route::get('/device/status', [DeviceController::class, 'show']);
-    Route::post('/sensor/status', [SensorController::class, 'logStatus']);
-    Route::post('/logs', [RelayController::class, 'logEvent']);
+    Route::get('/sensor/status', [SensorController::class, 'getStatus']);
+
+    Route::post('/control/relay', [RelayController::class, 'control']);
 });
 
-// Web route untuk relay control
-Route::middleware(['auth'])->group(function () {
+// Authenticated routes
+Route::middleware(['auth', 'web'])->group(function () {
     Route::post('/schedules', [ScheduleController::class, 'store']);
     Route::get('/schedules', [ScheduleController::class, 'index']);
     Route::delete('/schedules/{id}', [ScheduleController::class, 'destroy']);
-    Route::post('/control/relay', [RelayController::class, 'control']);
+
+    Route::get('/relay/logs', [RelayController::class, 'getLogs']);
+    Route::delete('/relay/logs', [RelayController::class, 'deleteAllLogs']);
+    Route::get('/sensor/logs', [SensorController::class, 'getLogs']);
+    Route::delete('/sensor/logs', [SensorController::class, 'deleteAllLogs']);
+    Route::delete('/sensor-logs/{id}', [SensorController::class, 'destroy']);
+
+
+    // Profile routes
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
-    Route::get('/relay/logs', [RelayController::class, 'getLogs']);
-    Route::get('/sensor/logs', [SensorController::class, 'getLogs']);
+
+    // Logout route - penting untuk menggunakan middleware 'web'
+    Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])
+        ->name('logout');
 });
 
 require __DIR__.'/auth.php';

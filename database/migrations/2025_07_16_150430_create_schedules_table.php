@@ -16,6 +16,7 @@ return new class extends Migration
             $table->foreignId('device_id')->constrained();
             $table->integer('hour');
             $table->integer('minute');
+            $table->integer('duration')->default(15); // Durasi dalam menit, default 30 menit
             $table->boolean('active')->default(true);
             $table->timestamps();
         });

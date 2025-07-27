@@ -15,7 +15,8 @@ return new class extends Migration
             $table->id();
             $table->foreignId('device_id')->constrained();
             $table->integer('sensor_number');
-            $table->enum('status', ['safe', 'raining']);
+            $table->enum('status', ['safe', 'raining'])-> default('raining');
+            $table->integer('duration_seconds')->nullable();
             $table->timestamps();
         });
     }
